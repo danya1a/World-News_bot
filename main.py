@@ -17,6 +17,7 @@ COUNTRY_TRANSLATIONS = {
 }
 
 user_language = {}
+user_last_country = {}
 
 def detect_telegram_lang(telegram_lang_code):
     if telegram_lang_code.startswith("uk"):
@@ -70,17 +71,14 @@ async def show_country_menu(query, lang):
         reply_markup=InlineKeyboardMarkup(country_buttons)
     )
 
-async def country_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    lang = user_language.get(user_id, "EN")
-    country = query.data.split("_")[1]
-
+async def send_news(query, user_id, lang, country):
     country_name = COUNTRY_TRANSLATIONS[lang][country]
-    loading_text = {"EN": f"Fetching news from {country_name}...",
-                    "UA": f"Отримання новин з {country_name}...",
-                    "RU": f"Получаю новости из {country_name}..."}[lang]
+    loading_text = {
+        "EN": f"Fetching news from {country_name}...",
+        "UA": f"Отримання новин з {country_name}...",
+        "RU": f"Получаю новости из {country_name}..."
+    }[lang]
+
     await query.edit_message_text(loading_text)
 
     news = get_news_by_country(country)
@@ -89,13 +87,37 @@ async def country_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(translated_news), 4000):
         await query.message.reply_text(translated_news[i:i + 4000])
 
-    back_button = InlineKeyboardMarkup([
+    keyboard = [
         [InlineKeyboardButton({"EN": "🔙 Back", "UA": "🔙 Назад", "RU": "🔙 Назад"}[lang], callback_data="back_to_countries")],
+        [InlineKeyboardButton({"EN": "🔄 Refresh", "UA": "🔄 Оновити", "RU": "🔄 Обновить"}[lang], callback_data="refresh_news")],
         [InlineKeyboardButton({"EN": "❌ Exit", "UA": "❌ Вийти", "RU": "❌ Выход"}[lang], callback_data="exit")]
-    ])
-    await query.message.reply_text({"EN": "Choose another country:",
-                                    "UA": "Оберіть іншу країну:",
-                                    "RU": "Выберите другую страну:"}[lang], reply_markup=back_button)
+    ]
+
+    await query.message.reply_text(
+        {"EN": "Choose an action:", "UA": "Оберіть дію:", "RU": "Выберите действие:"}[lang],
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def country_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    lang = user_language.get(user_id, "EN")
+    country = query.data.split("_")[1]
+    user_last_country[user_id] = country
+    await send_news(query, user_id, lang, country)
+
+async def handle_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    lang = user_language.get(user_id, "EN")
+    country = user_last_country.get(user_id)
+
+    if country:
+        await send_news(query, user_id, lang, country)
+    else:
+        await query.edit_message_text("⚠️ No country selected yet.")
 
 async def handle_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -123,6 +145,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_back, pattern="^back_to_countries$"))
     app.add_handler(CallbackQueryHandler(handle_exit, pattern="^exit$"))
     app.add_handler(CallbackQueryHandler(start_again, pattern="^start_again$"))
+    app.add_handler(CallbackQueryHandler(handle_refresh, pattern="^refresh_news$"))
     app.run_polling()
 
 if __name__ == "__main__":
