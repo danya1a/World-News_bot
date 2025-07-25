@@ -4,4 +4,4 @@ def translate_text(text: str, target_lang: str) -> str:
     try:
         return GoogleTranslator(source='auto', target=target_lang.lower()).translate(text)
     except Exception:
-        return text  # если ошибка — возвращаем оригинал
+        return text  
